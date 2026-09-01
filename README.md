@@ -22,12 +22,21 @@ pip install -r requirements.txt
 python stock_price.py
 ```
 
-実行すると、トヨタ自動車（`7203.T`）とApple（`AAPL`）について、
+実行すると、トヨタ自動車（`7203.T`）とApple（`AAPL`）について、最新1日分の株価が次のような日本語のテキストで表示されます。
 
-- 最新の株価
-- 過去1ヶ月分の株価データ（始値・高値・安値・終値・出来高）
+```
+---------
+【銘柄】トヨタ自動車 (7203.T)
+【日付】2026年9月2日
+【始値】2,850円
+【高値】2,880円
+【安値】2,830円
+【終値（現在の株価）】2,865円
+【前日比】+15円 (+0.5%)
+---------
+```
 
-が表示されます。
+日本株には自動で「円」、米国株には自動で「ドル」の単位が付きます。
 
 ## 3. コードの解説
 
@@ -36,27 +45,27 @@ python stock_price.py
 - 日本株: 証券コードの末尾に `.T` をつけます（例: トヨタ自動車 `7203.T`）
 - 米国株: そのままティッカーシンボルを使います（例: Apple `AAPL`）
 
-### `show_latest_price(ticker_symbol)`
+### `show_stock_summary(ticker_symbol)`
 
 ```python
-ticker = yf.Ticker(ticker_symbol)
-history = ticker.history(period="1d")
-latest_price = history["Close"].iloc[-1]
+history = ticker.history(period="5d")
+latest = history.iloc[-1]
+previous_close = history.iloc[-2]["Close"]
 ```
 
-- `yf.Ticker()` で銘柄オブジェクトを作成します。
-- `.history(period="1d")` で直近1日分のデータを取得します。
-- 取得したデータの `Close`（終値）列の最後の値が「最新の株価」です。
+- 前日比を計算するために直近5日分のデータを取得し、最新の1日分（`iloc[-1]`）とその前日分（`iloc[-2]`）を使います。
+- 始値・高値・安値・終値をそれぞれ取り出し、`format_amount()` で単位付きの文字列（例: `2,865円`）に整形します。
+- 終値と前日の終値の差から前日比の金額・パーセンテージを計算し、`format_diff()` で符号付き（`+`/`-`）の文字列にします。
 
-### `show_price_history(ticker_symbol, period)`
+### 会社名・単位の自動判定
 
 ```python
-history = ticker.history(period=period)
-print(history[["Open", "High", "Low", "Close", "Volume"]])
+COMPANY_NAMES = {"7203.T": "トヨタ自動車", "AAPL": "Apple", ...}
+CURRENCY_UNITS = {"JPY": "円", "USD": "ドル"}
 ```
 
-- `period` に `"1mo"`（1ヶ月）などの期間を指定すると、その期間分の株価データ（始値・高値・安値・終値・出来高）が取得できます。
-- 指定できる期間の例: `1d`, `5d`, `1mo`, `3mo`, `6mo`, `1y`, `5y`, `max`
+- `COMPANY_NAMES` に登録されている銘柄は日本語の会社名で表示されます。登録がない銘柄は yfinance から取得した英語名がそのまま使われます。
+- 通貨コード（`JPY`, `USD` など）から自動で「円」「ドル」の単位を判定して表示します。
 
 ## 4. カスタマイズ方法
 
@@ -71,6 +80,8 @@ target_symbols = ["7203.T", "AAPL"]  # ここに好きな銘柄コードを追�
 ```python
 target_symbols = ["6758.T", "MSFT"]
 ```
+
+なお、`COMPANY_NAMES` に登録されていない銘柄コードを指定した場合は、日本語名ではなく英語の会社名で表示されます。日本語名で表示したい場合は、`stock_price.py` 内の `COMPANY_NAMES` に `"銘柄コード": "日本語の会社名"` を追加してください。
 
 ## 5. 注意事項
 

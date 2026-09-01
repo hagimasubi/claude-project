@@ -1,8 +1,8 @@
 """
 株価取得プログラム（土台）
 
-yfinance を使って、指定した銘柄コードの
-「最新の株価」と「過去の株価データ」を取得して表示します。
+yfinance を使って、指定した銘柄コードの最新の株価情報を
+初心者にも分かりやすい日本語のテキストで表示します。
 
 使い方:
     python stock_price.py
@@ -14,36 +14,106 @@ yfinance を使って、指定した銘柄コードの
 
 import yfinance as yf
 
+# 銘柄コード -> 日本語の会社名（登録がない銘柄は yfinance から取得した英語名を使う）
+COMPANY_NAMES = {
+    "7203.T": "トヨタ自動車",
+    "6758.T": "ソニーグループ",
+    "9984.T": "ソフトバンクグループ",
+    "AAPL": "Apple",
+    "MSFT": "Microsoft",
+    "GOOGL": "Alphabet（Google）",
+}
 
-def show_latest_price(ticker_symbol: str) -> None:
-    """指定した銘柄コードの最新の株価を表示する"""
+# 通貨コード -> 表示する単位
+CURRENCY_UNITS = {
+    "JPY": "円",
+    "USD": "ドル",
+}
+
+
+def get_company_name(ticker: yf.Ticker, ticker_symbol: str) -> str:
+    """会社名を取得する（登録済みの日本語名がなければ yfinance の情報を使う）"""
+    if ticker_symbol in COMPANY_NAMES:
+        return COMPANY_NAMES[ticker_symbol]
+
+    try:
+        info = ticker.info
+        return info.get("longName") or info.get("shortName") or ticker_symbol
+    except Exception:
+        return ticker_symbol
+
+
+def get_currency_unit(ticker: yf.Ticker) -> str:
+    """通貨コードから表示用の単位（円・ドルなど）を取得する"""
+    currency_code = None
+    try:
+        currency_code = ticker.fast_info.currency
+    except Exception:
+        pass
+
+    if not currency_code:
+        try:
+            currency_code = ticker.info.get("currency")
+        except Exception:
+            currency_code = None
+
+    return CURRENCY_UNITS.get(currency_code, currency_code or "")
+
+
+def format_amount(value: float, unit: str) -> str:
+    """金額を単位付きの文字列に整形する（円は整数、それ以外は小数点2桁）"""
+    if unit == "円":
+        return f"{value:,.0f}{unit}"
+    return f"{value:,.2f}{unit}"
+
+
+def format_diff(value: float, unit: str) -> str:
+    """前日比の金額を符号付き（+/-）の文字列に整形する"""
+    if unit == "円":
+        return f"{value:+,.0f}{unit}"
+    return f"{value:+,.2f}{unit}"
+
+
+def show_stock_summary(ticker_symbol: str) -> None:
+    """指定した銘柄コードの最新1日分の株価を、日本語で分かりやすく表示する"""
     ticker = yf.Ticker(ticker_symbol)
 
-    # 直近1日分のデータから最新の終値を取得
-    history = ticker.history(period="1d")
+    # 前日比を計算するため直近5日分を取得し、末尾2日分を使う
+    history = ticker.history(period="5d")
 
     if history.empty:
-        print(f"[{ticker_symbol}] データが取得できませんでした。銘柄コードを確認してください。")
+        print(f"【銘柄】{ticker_symbol}")
+        print("株価データが取得できませんでした。銘柄コードを確認してください。")
+        print("-" * 40)
         return
 
-    latest_price = history["Close"].iloc[-1]
-    print(f"[{ticker_symbol}] 最新の株価: {latest_price:.2f}")
+    latest = history.iloc[-1]
+    latest_date = history.index[-1]
+    previous_close = history.iloc[-2]["Close"] if len(history) >= 2 else None
 
+    name = get_company_name(ticker, ticker_symbol)
+    unit = get_currency_unit(ticker)
 
-def show_price_history(ticker_symbol: str, period: str = "1mo") -> None:
-    """指定した銘柄コードの過去の株価データを表示する
+    open_price = latest["Open"]
+    high_price = latest["High"]
+    low_price = latest["Low"]
+    close_price = latest["Close"]
 
-    period の指定例: 1d, 5d, 1mo, 3mo, 6mo, 1y, 5y, max
-    """
-    ticker = yf.Ticker(ticker_symbol)
-    history = ticker.history(period=period)
+    print("---------")
+    print(f"【銘柄】{name} ({ticker_symbol})")
+    print(f"【日付】{latest_date.year}年{latest_date.month}月{latest_date.day}日")
+    print(f"【始値】{format_amount(open_price, unit)}")
+    print(f"【高値】{format_amount(high_price, unit)}")
+    print(f"【安値】{format_amount(low_price, unit)}")
+    print(f"【終値（現在の株価）】{format_amount(close_price, unit)}")
 
-    if history.empty:
-        print(f"[{ticker_symbol}] 過去データが取得できませんでした。")
-        return
-
-    print(f"\n[{ticker_symbol}] 過去の株価データ（期間: {period}）")
-    print(history[["Open", "High", "Low", "Close", "Volume"]])
+    if previous_close is not None and previous_close != 0:
+        diff = close_price - previous_close
+        percent = diff / previous_close * 100
+        print(f"【前日比】{format_diff(diff, unit)} ({percent:+.1f}%)")
+    else:
+        print("【前日比】データなし")
+    print("---------")
 
 
 if __name__ == "__main__":
@@ -51,6 +121,4 @@ if __name__ == "__main__":
     target_symbols = ["7203.T", "AAPL"]  # トヨタ自動車, Apple
 
     for symbol in target_symbols:
-        show_latest_price(symbol)
-        show_price_history(symbol, period="1mo")
-        print("-" * 40)
+        show_stock_summary(symbol)
