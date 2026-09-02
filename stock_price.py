@@ -1,21 +1,29 @@
 """
-株価取得プログラム（土台）
+株価取得プログラム
 
-yfinance を使って、キーボードで入力した銘柄コードの最新の株価情報を
-初心者にも分かりやすい日本語のテキストで表示します。
+企業名（日本語・英語どちらでもOK）を入力するだけで、
+Yahoo Finance の検索機能を使って自動的に銘柄コード（ティッカー）を見つけ出し、
+最新の株価を分かりやすい日本語のテキストで表示します。
 
 使い方:
     python stock_price.py
-    実行後、画面の指示に従って銘柄コードを入力してください。
+    実行後、画面の指示に従って調べたい企業名を入力してください。
 
-銘柄コードの例:
-    - トヨタ自動車（東証）: 7203.T   ※日本株は末尾に ".T" をつける
-    - Apple（米国株）    : AAPL
+入力例:
+    トヨタ / ソニー / アップル / Toyota / Apple / Tesla など
+    （7203.T や AAPL のように銘柄コードを直接入力してもOKです）
 """
 
+from typing import Optional
+
+import requests
 import yfinance as yf
 
-# 銘柄コード -> 日本語の会社名（登録がない銘柄は yfinance から取得した英語名を使う）
+# Yahoo Finance の銘柄検索API
+SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"
+REQUEST_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+# 銘柄コード -> 日本語の会社名（登録がない銘柄は検索結果や yfinance の英語名を使う）
 COMPANY_NAMES = {
     "7203.T": "トヨタ自動車",
     "6758.T": "ソニーグループ",
@@ -33,10 +41,33 @@ CURRENCY_UNITS = {
 }
 
 
-def get_company_name(ticker: yf.Ticker, ticker_symbol: str) -> str:
-    """会社名を取得する（登録済みの日本語名がなければ yfinance の情報を使う）"""
+def search_ticker(keyword: str) -> Optional[dict]:
+    """企業名（または銘柄コード）から、該当する銘柄情報を検索する
+
+    Yahoo Finance の検索API（SEARCH_URL）に問い合わせて、
+    最も一致度の高い株式（EQUITY）を1件返す。見つからなければ None。
+    """
+    params = {"q": keyword, "quotesCount": 5, "newsCount": 0}
+    response = requests.get(
+        SEARCH_URL, params=params, headers=REQUEST_HEADERS, timeout=10
+    )
+    response.raise_for_status()
+    quotes = response.json().get("quotes", [])
+
+    # 株式（EQUITY）を優先的に選ぶ。なければ最初の候補を使う
+    equities = [q for q in quotes if q.get("quoteType") == "EQUITY"]
+    candidates = equities or quotes
+
+    return candidates[0] if candidates else None
+
+
+def get_company_name(ticker: yf.Ticker, ticker_symbol: str, search_name: Optional[str]) -> str:
+    """会社名を取得する（日本語名の登録 > 検索結果の名前 > yfinance の英語名 の順）"""
     if ticker_symbol in COMPANY_NAMES:
         return COMPANY_NAMES[ticker_symbol]
+
+    if search_name:
+        return search_name
 
     try:
         info = ticker.info
@@ -76,7 +107,7 @@ def format_diff(value: float, unit: str) -> str:
     return f"{value:+,.2f}{unit}"
 
 
-def show_stock_summary(ticker_symbol: str) -> None:
+def show_stock_summary(ticker_symbol: str, search_name: Optional[str] = None) -> None:
     """指定した銘柄コードの最新1日分の株価を、日本語で分かりやすく表示する"""
     ticker = yf.Ticker(ticker_symbol)
 
@@ -86,14 +117,13 @@ def show_stock_summary(ticker_symbol: str) -> None:
     if history.empty:
         print(f"【銘柄】{ticker_symbol}")
         print("株価データが取得できませんでした。銘柄コードを確認してください。")
-        print("-" * 40)
         return
 
     latest = history.iloc[-1]
     latest_date = history.index[-1]
     previous_close = history.iloc[-2]["Close"] if len(history) >= 2 else None
 
-    name = get_company_name(ticker, ticker_symbol)
+    name = get_company_name(ticker, ticker_symbol, search_name)
     unit = get_currency_unit(ticker)
 
     open_price = latest["Open"]
@@ -118,17 +148,41 @@ def show_stock_summary(ticker_symbol: str) -> None:
     print("---------")
 
 
+def lookup_and_show(keyword: str) -> None:
+    """企業名（または銘柄コード）を検索し、見つかった銘柄の株価レポートを表示する"""
+    try:
+        match = search_ticker(keyword)
+    except requests.exceptions.RequestException as error:
+        print(f"銘柄の検索中にエラーが発生しました：{error}")
+        print("インターネット接続を確認して、もう一度お試しください。")
+        return
+
+    if not match:
+        print(f"「{keyword}」に一致する銘柄が見つかりませんでした。別のキーワードでお試しください。")
+        return
+
+    ticker_symbol = match.get("symbol")
+    search_name = match.get("longname") or match.get("shortname")
+
+    print(f"→「{keyword}」から銘柄コード「{ticker_symbol}」を見つけました。")
+
+    try:
+        show_stock_summary(ticker_symbol, search_name=search_name)
+    except Exception as error:
+        print(f"株価データの取得中にエラーが発生しました：{error}")
+
+
 def show_intro() -> None:
     """起動時に表示する説明とヒント"""
     print("=" * 40)
     print("株価チェックプログラム")
     print("=" * 40)
-    print("調べたい銘柄のコードを入力してください。")
+    print("調べたい企業名を入力してください。")
     print()
     print("【入力例】")
-    print("  日本株：トヨタ自動車 → 7203.T　／　ソニーグループ → 6758.T")
-    print("  米国株：Apple → AAPL　／　テスラ → TSLA")
-    print("  ※日本株は証券コードの後ろに「.T」を付けてください")
+    print("  日本語：トヨタ　／　ソニー　／　ソフトバンク")
+    print("  英語　：Apple　／　Tesla　／　Microsoft")
+    print("  ※7203.T や AAPL のように銘柄コードを直接入力してもOKです")
     print("  ※何も入力せず Enter を押すと終了します")
     print("-" * 40)
 
@@ -138,17 +192,13 @@ if __name__ == "__main__":
 
     try:
         while True:
-            ticker_symbol = input("調べたい銘柄のコードを入力してください： ").strip()
+            keyword = input("調べたい企業名を入力してください： ").strip()
 
-            if not ticker_symbol:
+            if not keyword:
                 print("プログラムを終了します。")
                 break
 
-            try:
-                show_stock_summary(ticker_symbol.upper())
-            except Exception as error:
-                print(f"エラーが発生しました：{error}")
-                print("銘柄コードが正しいか確認して、もう一度お試しください。")
+            lookup_and_show(keyword)
             print()
     except (KeyboardInterrupt, EOFError):
         print("\nプログラムを終了します。")
