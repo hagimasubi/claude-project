@@ -1,11 +1,12 @@
 """
 株価取得プログラム（土台）
 
-yfinance を使って、指定した銘柄コードの最新の株価情報を
+yfinance を使って、キーボードで入力した銘柄コードの最新の株価情報を
 初心者にも分かりやすい日本語のテキストで表示します。
 
 使い方:
     python stock_price.py
+    実行後、画面の指示に従って銘柄コードを入力してください。
 
 銘柄コードの例:
     - トヨタ自動車（東証）: 7203.T   ※日本株は末尾に ".T" をつける
@@ -22,6 +23,7 @@ COMPANY_NAMES = {
     "AAPL": "Apple",
     "MSFT": "Microsoft",
     "GOOGL": "Alphabet（Google）",
+    "TSLA": "テスラ",
 }
 
 # 通貨コード -> 表示する単位
@@ -116,9 +118,37 @@ def show_stock_summary(ticker_symbol: str) -> None:
     print("---------")
 
 
-if __name__ == "__main__":
-    # 調べたい銘柄コードをここに入れてください
-    target_symbols = ["7203.T", "AAPL"]  # トヨタ自動車, Apple
+def show_intro() -> None:
+    """起動時に表示する説明とヒント"""
+    print("=" * 40)
+    print("株価チェックプログラム")
+    print("=" * 40)
+    print("調べたい銘柄のコードを入力してください。")
+    print()
+    print("【入力例】")
+    print("  日本株：トヨタ自動車 → 7203.T　／　ソニーグループ → 6758.T")
+    print("  米国株：Apple → AAPL　／　テスラ → TSLA")
+    print("  ※日本株は証券コードの後ろに「.T」を付けてください")
+    print("  ※何も入力せず Enter を押すと終了します")
+    print("-" * 40)
 
-    for symbol in target_symbols:
-        show_stock_summary(symbol)
+
+if __name__ == "__main__":
+    show_intro()
+
+    try:
+        while True:
+            ticker_symbol = input("調べたい銘柄のコードを入力してください： ").strip()
+
+            if not ticker_symbol:
+                print("プログラムを終了します。")
+                break
+
+            try:
+                show_stock_summary(ticker_symbol.upper())
+            except Exception as error:
+                print(f"エラーが発生しました：{error}")
+                print("銘柄コードが正しいか確認して、もう一度お試しください。")
+            print()
+    except (KeyboardInterrupt, EOFError):
+        print("\nプログラムを終了します。")
